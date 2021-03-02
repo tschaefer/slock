@@ -13,3 +13,6 @@ static const int failonclear = 1;
 
 /* time in seconds before the monitor shuts down */
 static const int monitortime = 10;
+
+/* set blur size, 0 means disabled */
+static const int blur = 3;
