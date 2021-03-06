@@ -28,10 +28,11 @@
 char *argv0;
 
 enum {
-	INIT,
-	INPUT,
-	FAILED,
-	NUMCOLS
+	RED,
+	GREEN,
+	BLUE,
+	ALPHA,
+	NUMRGBCOLS,
 };
 
 struct lock {
@@ -39,7 +40,6 @@ struct lock {
 	Window root, win;
 	Pixmap pmap;
 	Pixmap bgmap;
-	unsigned long colors[NUMCOLS];
 };
 
 struct xrandr {
@@ -50,7 +50,7 @@ struct xrandr {
 
 #include "config.h"
 
-Imlib_Image image;
+Imlib_Image screen_image;
 
 static void
 die(const char *errstr, ...)
@@ -61,6 +61,81 @@ die(const char *errstr, ...)
 	vfprintf(stderr, errstr, ap);
 	va_end(ap);
 	exit(1);
+}
+
+static void
+createimage(Display *dpy, int blur)
+{
+	int h, w;
+	Imlib_Image background_image;
+	Imlib_Image lock_image;
+	char lock_image_path[1024];
+	Screen *scr;
+
+	scr = ScreenOfDisplay(dpy, DefaultScreen(dpy));
+
+	/* create screen image  */
+	screen_image = imlib_create_image(scr->width, scr->height);
+
+	/* set screen color */
+	imlib_context_set_image(screen_image);
+	imlib_context_set_color(screencolors[RED], screencolors[GREEN],
+							screencolors[BLUE], screencolors[ALPHA]);
+	imlib_image_fill_rectangle(0, 0, scr->width, scr->height);
+
+	/* load background image and get w, h */
+	background_image = imlib_load_image(screenimage);
+	imlib_context_set_image(background_image);
+	w = imlib_image_get_width();
+	h = imlib_image_get_height();
+
+	/* blend background image onto screen image */
+	imlib_context_set_image(screen_image);
+	imlib_blend_image_onto_image(background_image, 0, 0, 0, w, h, 0, 0, w, h);
+
+	/* free background image */
+	imlib_context_set_image(background_image);
+	imlib_free_image();
+
+	if (blur > 0) {
+		/* blur screen image */
+		imlib_context_set_image(screen_image);
+		imlib_image_blur(blur);
+	}
+
+	/* load lock image and get w, h  */
+	sprintf(lock_image_path, PREFIX"/share/slock/icons/%s.png", screenlock);
+	lock_image = imlib_load_image(lock_image_path);
+	imlib_context_set_image(lock_image);
+	w = imlib_image_get_width();
+	h = imlib_image_get_height();
+
+	/* blend lock image onto screen image */
+	imlib_context_set_image(screen_image);
+	imlib_blend_image_onto_image(lock_image, 0, 0, 0, w, h, 10,
+								 scr->height - h - 10, w, h);
+
+	/* free lock image */
+	imlib_context_set_image(lock_image);
+	imlib_free_image();
+}
+
+static void
+setimage(Display *dpy, struct lock *lock)
+{
+	if (!lock->bgmap)
+		lock->bgmap = XCreatePixmap(dpy, lock->root,
+									DisplayWidth(dpy, lock->screen),
+									DisplayHeight(dpy, lock->screen),
+									DefaultDepth(dpy, lock->screen));
+
+	imlib_context_set_image(screen_image);
+	imlib_context_set_display(dpy);
+	imlib_context_set_visual(DefaultVisual(dpy, lock->screen));
+	imlib_context_set_colormap(DefaultColormap(dpy, lock->screen));
+	imlib_context_set_drawable(lock->bgmap);
+	imlib_render_image_on_drawable(0, 0);
+	imlib_free_image();
 }
 
 #ifdef __linux__
@@ -136,18 +211,20 @@ readpw(Display *dpy, struct xrandr *rr, struct lock **locks, int nscreens,
 {
 	XRRScreenChangeNotifyEvent *rre;
 	char buf[32], passwd[256], *inputhash;
-	int num, screen, running, failure, oldc;
-	unsigned int len, color;
+	int num, screen, running, failure, state, blur;
+	unsigned int len;
 	KeySym ksym;
 	XEvent ev;
 
 	len = 0;
 	running = 1;
+	state = 0;
 	failure = 0;
-	oldc = INIT;
+	blur = 0;
 
 	while (running && !XNextEvent(dpy, &ev)) {
 		if (ev.type == KeyPress) {
+			failure = 0;
 			explicit_bzero(&buf, sizeof(buf));
 			num = XLookupString(&ev.xkey, buf, sizeof(buf), &ksym, 0);
 			if (IsKeypadKey(ksym)) {
@@ -201,18 +278,18 @@ readpw(Display *dpy, struct xrandr *rr, struct lock **locks, int nscreens,
 				}
 				break;
 			}
-			color = len ? INPUT : ((failure || failonclear) ? FAILED : INIT);
-			if (running && oldc != color) {
+			if (running && state != failure) {
 				for (screen = 0; screen < nscreens; screen++) {
-					if (blur > 0)
-						XSetWindowBackgroundPixmap(dpy, locks[screen]->win,
-												   locks[screen]->bgmap);
+					if (failure)
+						blur = 5;
 					else
-						XSetWindowBackground(dpy, locks[screen]->win,
-											 locks[screen]->colors[0]);
+						blur = 0;
+					createimage(dpy, blur);
+					setimage(dpy, locks[screen]);
+					XSetWindowBackgroundPixmap(dpy, locks[screen]->win, locks[screen]->bgmap);
 					XClearWindow(dpy, locks[screen]->win);
 				}
-				oldc = color;
+				state = failure;
 			}
 		} else if (rr->active && ev.type == rr->evbase + RRScreenChangeNotify) {
 			rre = (XRRScreenChangeNotifyEvent*)&ev;
@@ -242,7 +319,7 @@ lockscreen(Display *dpy, struct xrandr *rr, int screen)
 	char curs[] = {0, 0, 0, 0, 0, 0, 0, 0};
 	int i, ptgrab, kbgrab;
 	struct lock *lock;
-	XColor color, dummy;
+	XColor color;
 	XSetWindowAttributes wa;
 	Cursor invisible;
 
@@ -252,29 +329,10 @@ lockscreen(Display *dpy, struct xrandr *rr, int screen)
 	lock->screen = screen;
 	lock->root = RootWindow(dpy, lock->screen);
 
-	if (blur > 0) {
-		lock->bgmap = XCreatePixmap(dpy, lock->root,
-									DisplayWidth(dpy, lock->screen),
-									DisplayHeight(dpy, lock->screen),
-									DefaultDepth(dpy, lock->screen));
-		imlib_context_set_image(image);
-		imlib_context_set_display(dpy);
-		imlib_context_set_visual(DefaultVisual(dpy, lock->screen));
-		imlib_context_set_colormap(DefaultColormap(dpy, lock->screen));
-		imlib_context_set_drawable(lock->bgmap);
-		imlib_render_image_on_drawable(0, 0);
-		imlib_free_image();
-	}
-
-	for (i = 0; i < NUMCOLS; i++) {
-		XAllocNamedColor(dpy, DefaultColormap(dpy, lock->screen),
-		                 colorname[i], &color, &dummy);
-		lock->colors[i] = color.pixel;
-	}
+	setimage(dpy, lock);
 
 	/* init */
 	wa.override_redirect = 1;
-	wa.background_pixel = lock->colors[INIT];
 	lock->win = XCreateWindow(dpy, lock->root, 0, 0,
 	                          DisplayWidth(dpy, lock->screen),
 	                          DisplayHeight(dpy, lock->screen),
@@ -282,8 +340,7 @@ lockscreen(Display *dpy, struct xrandr *rr, int screen)
 	                          CopyFromParent,
 	                          DefaultVisual(dpy, lock->screen),
 	                          CWOverrideRedirect | CWBackPixel, &wa);
-	if (blur > 0)
-		XSetWindowBackgroundPixmap(dpy, lock->win, lock->bgmap);
+	XSetWindowBackgroundPixmap(dpy, lock->win, lock->bgmap);
 	lock->pmap = XCreateBitmapFromData(dpy, lock->win, curs, 8, 8);
 	invisible = XCreatePixmapCursor(dpy, lock->pmap, lock->pmap,
 	                                &color, &color, 0, 0);
@@ -389,20 +446,7 @@ main(int argc, char **argv) {
 	if (setuid(duid) < 0)
 		die("slock: setuid: %s\n", strerror(errno));
 
-
-	if (blur > 0) {
-		/* create screenshot Image */
-		Screen *scr = ScreenOfDisplay(dpy, DefaultScreen(dpy));
-		image = imlib_create_image(scr->width,scr->height);
-		imlib_context_set_image(image);
-		imlib_context_set_display(dpy);
-		imlib_context_set_visual(DefaultVisual(dpy,0));
-		imlib_context_set_drawable(RootWindow(dpy,XScreenNumberOfScreen(scr)));	
-		imlib_copy_drawable_to_image(0,0,0,scr->width,scr->height,0,0,1);
-
-		/* blur function */
-		imlib_image_blur(blur);
-    }
+	createimage(dpy, 0);
 
 	/* check for Xrandr support */
 	rr.active = XRRQueryExtension(dpy, &rr.evbase, &rr.errbase);
