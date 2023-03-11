@@ -35,7 +35,7 @@ clean:
 dist: clean
 	@echo creating dist tarball
 	@mkdir -p slock-${VERSION}
-	@cp -R LICENSE Makefile README slock.1 config.mk share \
+	@cp -R LICENSE Makefile README slock.1 config.mk \
 		${SRC} config.def.h arg.h util.h slock-${VERSION}
 	@tar -cf slock-${VERSION}.tar slock-${VERSION}
 	@gzip slock-${VERSION}.tar
@@ -51,17 +51,11 @@ install: all
 	@mkdir -p ${DESTDIR}${MANPREFIX}/man1
 	@sed "s/VERSION/${VERSION}/g" <slock.1 >${DESTDIR}${MANPREFIX}/man1/slock.1
 	@chmod 644 ${DESTDIR}${MANPREFIX}/man1/slock.1
-	@echo installing share to ${DESTDIR}${PREFIX}/share/slock
-	@mkdir -p ${DESTDIR}${PREFIX}/share
-	@cp -rf share ${DESTDIR}${PREFIX}/share/slock
 
 uninstall:
 	@echo removing executable file from ${DESTDIR}${PREFIX}/bin
 	@rm -f ${DESTDIR}${PREFIX}/bin/slock
 	@echo removing manual page from ${DESTDIR}${MANPREFIX}/man1
 	@rm -f ${DESTDIR}${MANPREFIX}/man1/slock.1
-	@echo removing share from ${DESTDIR}${PREFIX}/share
-	@rm -rf ${DESTDIR}${PREFIX}/share/slock
-
 
 .PHONY: all options clean dist install uninstall
