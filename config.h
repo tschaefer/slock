@@ -6,10 +6,3 @@ static const char *group = "nogroup";
 static const int monitortime = 60;
 
 static const char *screenimage = "/home/tschaefer/.wallpapers/wallpaper.jpg";
-static const char *screenlock = "circlelockclear";
-static const int screencolors[NUMRGBCOLS] = {
-	[RED] = 2,
-	[GREEN] = 20,
-	[BLUE] = 25,
-	[ALPHA] = 255,
-};

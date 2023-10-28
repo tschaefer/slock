@@ -27,14 +27,6 @@
 
 char *argv0;
 
-enum {
-	RED,
-	GREEN,
-	BLUE,
-	ALPHA,
-	NUMRGBCOLS,
-};
-
 struct lock {
 	int screen;
 	Window root, win;
@@ -68,20 +60,12 @@ createimage(Display *dpy, int blur)
 {
 	int h, w;
 	Imlib_Image background_image;
-	Imlib_Image lock_image;
-	char lock_image_path[1024];
 	Screen *scr;
 
 	scr = ScreenOfDisplay(dpy, DefaultScreen(dpy));
 
 	/* create screen image  */
 	screen_image = imlib_create_image(scr->width, scr->height);
-
-	/* set screen color */
-	imlib_context_set_image(screen_image);
-	imlib_context_set_color(screencolors[RED], screencolors[GREEN],
-							screencolors[BLUE], screencolors[ALPHA]);
-	imlib_image_fill_rectangle(0, 0, scr->width, scr->height);
 
 	/* load background image and get w, h */
 	background_image = imlib_load_image(screenimage);
@@ -102,22 +86,6 @@ createimage(Display *dpy, int blur)
 		imlib_context_set_image(screen_image);
 		imlib_image_blur(blur);
 	}
-
-	/* load lock image and get w, h  */
-	sprintf(lock_image_path, PREFIX"/share/slock/icons/%s.png", screenlock);
-	lock_image = imlib_load_image(lock_image_path);
-	imlib_context_set_image(lock_image);
-	w = imlib_image_get_width();
-	h = imlib_image_get_height();
-
-	/* blend lock image onto screen image */
-	imlib_context_set_image(screen_image);
-	imlib_blend_image_onto_image(lock_image, 0, 0, 0, w, h, 10,
-								 scr->height - h - 10, w, h);
-
-	/* free lock image */
-	imlib_context_set_image(lock_image);
-	imlib_free_image();
 }
 
 static void
