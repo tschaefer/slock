@@ -5,4 +5,4 @@ static const char *group = "nogroup";
 /* time in seconds before the monitor shuts down */
 static const int monitortime = 60;
 
-static const char *screenimage = "/home/tschaefer/.wallpapers/wallpaper.jpg";
+static const char *screenimage = "/home/tschaefer/.wallpapers/slock.jpg";
