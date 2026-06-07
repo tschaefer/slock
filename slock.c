@@ -17,6 +17,7 @@
 #include <sys/types.h>
 #include <X11/extensions/Xrandr.h>
 #include <X11/keysym.h>
+#include <X11/XF86keysym.h>
 #include <X11/Xlib.h>
 #include <X11/Xutil.h>
 
@@ -158,6 +159,14 @@ readpw(Display *dpy, struct xrandr *rr, struct lock **locks, int nscreens,
 			    IsPrivateKeypadKey(ksym))
 				continue;
 			switch (ksym) {
+			case XF86XK_AudioMute:
+			case XF86XK_AudioLowerVolume:
+			case XF86XK_AudioRaiseVolume:
+			case XF86XK_AudioPrev:
+			case XF86XK_AudioNext:
+			case XF86XK_AudioPlay:
+				XSendEvent(dpy, DefaultRootWindow(dpy), True, KeyPressMask, &ev);
+				break;
 			case XK_Return:
 				passwd[len] = '\0';
 				errno = 0;
